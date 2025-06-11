@@ -263,6 +263,7 @@ int redirect(char **args, char **fileName){
 }
 
 // Method for executing command
+// Got help for the command execution from here: https://github.com/szholdiyarov/command-line-interpreter/blob/master/myshell.c
 int execute_command(char **args){
 
     // No command provided
@@ -315,6 +316,7 @@ int execute_command(char **args){
         return 0;
     }
 
+    //Get info if result should be redirected to a file or not
     char *fileName;
     int redirect_result = redirect(args, &fileName);
 
@@ -323,6 +325,7 @@ int execute_command(char **args){
         return 1;
     }
 
+    // Create the command path
     char path[4096] = "PATH=";
     for(int i=0; i<path_amount && search_paths[i] != NULL; i++){
         if(i>0){
@@ -331,6 +334,7 @@ int execute_command(char **args){
         strcat(path, search_paths[i]);
     }
 
+    //fork created using pid for the actual execution of command
     pid_t pid = fork();
     if(pid == 0){
 
