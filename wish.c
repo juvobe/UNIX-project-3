@@ -11,7 +11,7 @@
 
 void shellLoop(int mode, FILE *input);
 char **split_line(char *line, int *commandAmount);
-char **parse_line(char *line);
+char **parse_commands(char *line);
 int redirect(char **args, char **fileName);
 int execute_command(char **args);
 void error_message();
@@ -58,6 +58,7 @@ int main(int argc, char *argv[]){
     return 0;
 }
 
+// The method inside of which the while loop for program execution is.
 void shellLoop(int mode, FILE *input){
     char *line = NULL;
     int status = 1, commandAmount = 0;
@@ -87,6 +88,7 @@ void shellLoop(int mode, FILE *input){
             continue;
         }
 
+        //Line is split into commands
         char **commands = split_line(line, &commandAmount);
 
         if(commandAmount == 0){
@@ -97,8 +99,10 @@ void shellLoop(int mode, FILE *input){
         pid_t children[100];
         int childAmount = 0;
 
+        //Loop for parsing the commands and executing them
         for(int i=0; i<commandAmount; i++){
-            char **args = parse_line(commands[i]);
+            char **args = parse_commands(commands[i]);
+            
             if(args[0] != NULL){
                 int result = execute_command(args);
                 if(result > 1){
@@ -114,6 +118,7 @@ void shellLoop(int mode, FILE *input){
             free(args);
         }
 
+        // Loop for parallel execution
         for(int i=0; i<childAmount; i++){
             int state;
             waitpid(children[i], &state, 0);
@@ -129,27 +134,34 @@ void shellLoop(int mode, FILE *input){
 
     } while(status);
 
+    //Free memory of lines
     if(line){
         free(line);
     }
+
     return;
 }
 
+//Method for splitting a line into commands
 char **split_line(char *line, int *commandAmount){
     int buffer = BUFSIZE, pos = 0;
     char **commands = malloc(buffer * sizeof(char*));
     char *token;
-    char *line_copy = strdup(line); // The line is copied because strtok modifies the original string
+    char *line_copy = strdup(line); // The line is copied because strtok modifies the original string, so using line itself didn't work
 
     if(!commands || !line_copy){
         error_message();
         exit(1);
     }
 
+    //Tokenize with &
     token = strtok(line_copy, "&");
     while(token != NULL){
-        // Below while is only to trim whitespace
-        while(*token == ' '|| *token == '\t' || *token == '\n') token++;
+        // Below while trims whitespace
+        while(*token == ' '|| *token == '\t' || *token == '\n'){
+            token++;
+        }
+
         if(strlen(token) > 0){
             commands[pos] = strdup(token); // strdup to ease memory management
             pos++;
@@ -172,7 +184,8 @@ char **split_line(char *line, int *commandAmount){
     return commands;
 }
 
-char **parse_line(char *line){
+// This method parses commands into usable types
+char **parse_commands(char *line){
     int buffer = BUFSIZE, pos=0;
     char **tokens = malloc(buffer * sizeof(char*));
     char *token;
@@ -183,11 +196,14 @@ char **parse_line(char *line){
         exit(1);
     }
 
+    //Tokenize with delimiters that are defined at the top of the file
     token = strtok(line_copy, DELIMS);
     while (token != NULL){
+        // Populate tokens arraylist with the tokens
         tokens[pos] = strdup(token);
         pos++;
         
+        //Add memory to arraylist if required
         if(pos >= buffer){
             buffer += BUFSIZE;
             tokens = realloc(tokens, buffer*sizeof(char*));
@@ -204,6 +220,7 @@ char **parse_line(char *line){
     return tokens;
 }
 
+//Method for redirecting output to file
 int redirect(char **args, char **fileName){
     int pos = -1;
     int count = 0;
@@ -231,7 +248,7 @@ int redirect(char **args, char **fileName){
         return -1; //Chek what -1
     }
 
-    //Multiple files
+    //Multiple files or other text after file name
     if(args[pos + 2] != NULL){
         return -1;
     }
@@ -245,12 +262,15 @@ int redirect(char **args, char **fileName){
     return 1; // Reached if redirection exists
 }
 
+// Method for executing command
 int execute_command(char **args){
 
+    // No command provided
     if(args[0] == NULL){
-        return 0; // No command provided
+        return 0;
     }
 
+    //Built-in exit command
     if(strcmp(args[0], "exit") == 0){
         if(args[1] != NULL){
             error_message();
@@ -259,18 +279,25 @@ int execute_command(char **args){
         exit(0);
     }
 
+    //Built-in cd command
     if(strcmp(args[0], "cd") == 0){
+        
+        //Error if no directory provided
         if(args[1] == NULL || args[2] != NULL){
             error_message();
             return 1;
         }
+
+        //Change directory
         if(chdir(args[1]) != 0){
             error_message();
             return 1;
         }
+
         return 0;
     }
 
+    //Built-in command path
     if(strcmp(args[0], "path") == 0){
         for(int i=0; i<100; i++){
             if(search_paths[i] != NULL){
@@ -278,8 +305,9 @@ int execute_command(char **args){
                 search_paths[i] = NULL;
             }
         }
+        
         path_amount = 0;
-
+        //Path amount is limited to 100, should be enough
         for(int i=1; args[i] != NULL && path_amount < 100; i++){
             search_paths[path_amount] = strdup(args[i]);
             path_amount++;
@@ -297,7 +325,9 @@ int execute_command(char **args){
 
     char path[4096] = "PATH=";
     for(int i=0; i<path_amount && search_paths[i] != NULL; i++){
-        if(i>0) strcat(path, ":");
+        if(i>0){
+            strcat(path, ":");
+        }
         strcat(path, search_paths[i]);
     }
 
@@ -305,7 +335,7 @@ int execute_command(char **args){
     if(pid == 0){
 
         // Redirection is handled if it is detected
-        if(fileName != NULL){
+        if(redirect_result == 1){ //or fileName != NULL
             int file = open(fileName, O_WRONLY | O_CREAT | O_TRUNC, 0644);
             if(file == -1){
                 error_message();
@@ -328,14 +358,13 @@ int execute_command(char **args){
         }
     } else if(pid < 0){
         error_message();
-        if(fileName) free(fileName);
         return 1;
     }
 
-    if(fileName) free(fileName);
     return pid;
 }
 
+//Method for printing the error message
 void error_message(){
     char error_message[30] = "An error has occurred.\n";
     write(STDERR_FILENO, error_message, strlen(error_message));
