@@ -1,3 +1,9 @@
+/*
+Name: Juuso von Behr
+Student number: 0617328
+Date: 14.6.2025
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -6,13 +12,16 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
+//Define elimiters and a buffer
 #define DELIMS " \t\r\n\a"
 #define BUFSIZE 64
 
+//Declaring all methods
 void shellLoop(int mode, FILE *input);
 char **split_line(char *line, int *commandAmount);
 char **parse_commands(char *line);
 int redirect(char **args, char **fileName);
+char *search_executable_path(char *command);
 int execute_command(char **args);
 void error_message();
 
@@ -70,7 +79,6 @@ void shellLoop(int mode, FILE *input){
         // Mode 0 user input and mode 1 file input
         if(mode == 0){
             printf("wish> ");
-            fflush(stdout);
         }
      
         chars = getline(&line, &linesize, input);
@@ -82,10 +90,6 @@ void shellLoop(int mode, FILE *input){
             }
             status = 0;
             break;
-        }
-
-        if(strlen(line) <= 1){
-            continue;
         }
 
         //Line is split into commands
@@ -124,15 +128,14 @@ void shellLoop(int mode, FILE *input){
             waitpid(children[i], &state, 0);
         }
 
+        //Free command array memory and set command amounts to zero
         for(int i=0; i<commandAmount; i++){
             free(commands[i]);
         }
-
-        //Free command array memory and set command amounts to zero
         free(commands);
         commandAmount = 0;
 
-    } while(status);
+    } while(status == 1);
 
     //Free memory of lines
     if(line){
@@ -178,6 +181,7 @@ char **split_line(char *line, int *commandAmount){
         token = strtok(NULL, "&");
     }
 
+    //Set the last command as NULL, the command amount as the last position from the while loop and free the copied line memory
     commands[pos] = NULL;
     *commandAmount = pos;
     free(line_copy);
@@ -196,7 +200,7 @@ char **parse_commands(char *line){
         exit(1);
     }
 
-    //Tokenize with delimiters that are defined at the top of the file
+    //Tokenize with delimiters that are defined at the top of the program
     token = strtok(line_copy, DELIMS);
     while (token != NULL){
         // Populate tokens arraylist with the tokens
@@ -215,6 +219,7 @@ char **parse_commands(char *line){
         token = strtok(NULL, DELIMS);
     }
 
+    //Set the last token as NULL and free the copied line memory
     tokens[pos] = NULL;
     free(line_copy);
     return tokens;
@@ -232,9 +237,9 @@ int redirect(char **args, char **fileName){
         }
     }
 
-    //Multiple redirects
+    //Multiple redirects, error
     if(count > 1){
-        return -1; //CHEK
+        return -1;
     }
 
     //No redirect, return
@@ -243,23 +248,45 @@ int redirect(char **args, char **fileName){
         return 0;
     }
 
-    //No file name after >
+    //No file name after >, error
     if(args[pos + 1] == NULL){
-        return -1; //Chek what -1
+        return -1;
     }
 
-    //Multiple files or other text after file name
+    //Multiple files or other text after file name, error
     if(args[pos + 2] != NULL){
         return -1;
     }
 
+    //file name is one argument after > and free memories of used args
     *fileName = strdup(args[pos + 1]);
-
     free(args[pos]);
     free(args[pos+1]);
     args[pos] = NULL;
 
     return 1; // Reached if redirection exists
+}
+
+//Funcation to search for an executable in search paths
+char *search_executable_path(char *command){
+
+    //loop to go through each path
+    for(int i=0; i<path_amount && search_paths[i] != NULL; i++){
+        int len = strlen(search_paths[i]) + strlen(command) + 2; //Add null terminator to path length
+        char *path = malloc(len);
+        if(!path){
+            return NULL;
+        }
+
+        // Create the full path and check if it is an executable and return it if true
+        snprintf(path, len, "%s/%s", search_paths[i], command);
+        if(access(path, X_OK) == 0){
+            return path;
+        }
+
+        free (path);
+    }
+    return NULL;
 }
 
 // Method for executing command
@@ -300,6 +327,8 @@ int execute_command(char **args){
 
     //Built-in command path
     if(strcmp(args[0], "path") == 0){
+
+        //free the current paths
         for(int i=0; i<100; i++){
             if(search_paths[i] != NULL){
                 free(search_paths[i]);
@@ -308,7 +337,7 @@ int execute_command(char **args){
         }
         
         path_amount = 0;
-        //Path amount is limited to 100, should be enough
+        //Path amount is limited to 100 because the original search_paths array size is 100, should be enough
         for(int i=1; args[i] != NULL && path_amount < 100; i++){
             search_paths[path_amount] = strdup(args[i]);
             path_amount++;
@@ -325,21 +354,19 @@ int execute_command(char **args){
         return 1;
     }
 
-    // Create the command path
-    char path[4096] = "PATH=";
-    for(int i=0; i<path_amount && search_paths[i] != NULL; i++){
-        if(i>0){
-            strcat(path, ":");
-        }
-        strcat(path, search_paths[i]);
+    //find the executable using access() systen call
+    char *executable_path = search_executable_path(args[0]);
+    if(executable_path == NULL){
+        error_message();
+        return 1;
     }
 
-    //fork created using pid for the actual execution of command
+    //fork created using pid for the actual execution of command, so multiple commands can be executed
     pid_t pid = fork();
     if(pid == 0){
 
-        // Redirection is handled if it is detected
-        if(redirect_result == 1){ //or fileName != NULL
+        // Redirection is handled if it is detected, got help for redirecting stdout to a file from the man pages and here: https://gist.github.com/miguelmota/ec95bed91ecc19814ddcef1eb1389fa4
+        if(redirect_result == 1){
             int file = open(fileName, O_WRONLY | O_CREAT | O_TRUNC, 0644);
             if(file == -1){
                 error_message();
@@ -353,22 +380,24 @@ int execute_command(char **args){
             close(file);
         }
 
-        if(path_amount > 0){
-            putenv(path);
-        }
-        if(execvp(args[0], args) == -1){
+        //Actual execution with execv and a consequent error check, got background help from here: https://www.geeksforgeeks.org/c/exec-family-of-functions-in-c/
+        int status_code = execv(executable_path, args);
+        if(status_code == -1){
             error_message();
             exit(1);
         }
+
     } else if(pid < 0){
         error_message();
+        free(executable_path);
         return 1;
     }
 
+    free(executable_path);
     return pid;
 }
 
-//Method for printing the error message
+//Method for printing the error message, a little faster and cleaner than writing the same thing at every error.
 void error_message(){
     char error_message[30] = "An error has occurred.\n";
     write(STDERR_FILENO, error_message, strlen(error_message));

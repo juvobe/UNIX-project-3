@@ -1,0 +1,26 @@
+echo "Test start"
+ls
+date
+pwd
+
+echo "Path tests"
+path
+ls
+path /bin /usr/bin
+ls
+
+echo "Directory tests"
+cd /tmp
+pwd
+
+echo "Redirection tests"
+echo This is output file > output.txt
+echo Error file > error.txt
+cat output.txt
+cat error.txt
+
+echo "Parallel execution tests"
+echo This executes first & echo And this second & echo this is third and goes to output file > output.txt
+cat output.txt
+cd ..
+sleep 1 & echo Wait a second & ls
